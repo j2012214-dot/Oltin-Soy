@@ -5,7 +5,7 @@ import qrcode
 from io import BytesIO
 
 # Настройка страницы клиники
-st.set_page_config(page_title="Санаторий Олтин", layout="wide")
+st.set_page_config(page_title="Санаторий Олтин Сой", layout="wide")
 
 # Функция для работы с базой данных
 def run_query(query, params=(), is_select=True):
@@ -86,11 +86,11 @@ def init_db():
         for i in range(14):
             rooms_data.append((f"0{i}" if i < 10 else f"{i}", "Корпус 1", "1", "Свободно", "Стандарт"))
             
-        # 2. Полу-Люкс: счетчик с 00 до 04 (обнулен)
+        # 2. Полу-Люкс: счетчик с 00 до 04
         for i in range(5):
             rooms_data.append((f"0{i}", "Корпус 1", "2", "Свободно", "Полу-Люкс"))
             
-        # 3. Люкс: счетчик с 01 до 08 (обнулен)
+        # 3. Люкс: счетчик с 01 до 08
         for i in range(1, 9):
             rooms_data.append((f"0{i}", "Корпус 2", "3", "Свободно", "Люкс"))
             
@@ -99,42 +99,74 @@ def init_db():
 
 init_db()
 
-# Левая панель - Вход
-st.sidebar.title("📱 SMS Авторизация")
-phone_input = st.sidebar.text_input("Введите номер телефона", value="+998970978668").strip()
-sms_confirm = st.sidebar.checkbox("Подтвердить код из SMS", value=True)
+# Использование сессии для авторизации
+if 'logged_in_user' not in st.session_state:
+    st.session_state['logged_in_user'] = None
 
-user_df = run_query("SELECT * FROM users WHERE phone = ?", (phone_input,))
-current_user = None
-
-if not user_df.empty and sms_confirm:
-    current_user = user_df.iloc[0]
-    st.sidebar.success(f"Вы вошли как: {current_user['name']}")
-elif sms_confirm and phone_input:
-    st.sidebar.warning("Номер не найден в базе.")
-    st.sidebar.subheader("🆕 Регистрация нового Пациента")
-    new_name = st.sidebar.text_input("Ваше Имя и Фамилия")
-    new_complaint = st.sidebar.text_area("Ваши жалобы при поступлении")
-    if st.sidebar.button("Зарегистрироваться"):
-        if new_name:
-            run_query("INSERT INTO users (name, phone, role, complaints) VALUES (?, ?, 'Пациент', ?)", (new_name, phone_input, new_complaint), is_select=False)
-            st.sidebar.success("Вы успешно зарегистрированы! Перезайдите для входа.")
+# ---------------------------------------------------------
+# ГЛАВНОЕ МЕНЮ И СТАРТОВАЯ СТРАНИЦА (ЕСЛИ НЕ АВТОРИЗОВАН)
+# ---------------------------------------------------------
+if st.session_state['logged_in_user'] is None:
+    st.title("🌟 Добро пожаловать в Санаторий «Олтин Сой»")
+    st.subheader("Система онлайн-бронирования и управления услугами")
+    st.write("Пожалуйста, зарегистрируйтесь или войдите, используя ваш номер телефона, для доступа к услугам санатория.")
+    
+    # Поля авторизации и регистрации на главном экране
+    st.info("### 📱 Вход в систему / Регистрация")
+    phone_input = st.text_input("Введите ваш номер телефона", value="+998970978668").strip()
+    sms_confirm = st.checkbox("Подтвердить код из SMS")
+    
+    if phone_input and sms_confirm:
+        user_df = run_query("SELECT * FROM users WHERE phone = ?", (phone_input,))
+        if not user_df.empty:
+            st.session_state['logged_in_user'] = user_df.iloc[0]
+            st.success("Вы успешно вошли в систему!")
             st.rerun()
+        else:
+            st.warning("Ваш номер не найден в базе данных. Пожалуйста, пройдите быструю регистрацию ниже:")
+            with st.form("main_reg_form"):
+                new_name = st.text_input("Ваше Имя и Фамилия")
+                new_complaint = st.text_area("Ваши жалобы при поступлении")
+                if st.form_submit_button("Зарегистрироваться и войти"):
+                    if new_name:
+                        run_query("INSERT INTO users (name, phone, role, complaints) VALUES (?, ?, 'Пациент', ?)", (new_name, phone_input, new_complaint), is_select=False)
+                        fresh_user = run_query("SELECT * FROM users WHERE phone = ?", (phone_input,)).iloc[0]
+                        st.session_state['logged_in_user'] = fresh_user
+                        st.success("Регистрация завершена!")
+                        st.rerun()
+                    else:
+                        st.error("Пожалуйста, введите ваше Имя и Фамилию.")
 
-def render_qr(data_text):
-    qr = qrcode.QRCode(version=1, box_size=10, border=2)
-    qr.add_data(data_text)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = BytesIO()
-    img.save(buf)
-    st.sidebar.image(buf.getvalue(), caption="Ваш персональный QR-код", width=150)
-
-if current_user is not None:
+# ---------------------------------------------------------
+# ЕСЛИ ПОЛЬЗОВАТЕЛЬ АВТОРИЗОВАН — ПОКАЗЫВАЕМ ЕГО ЛИЧНЫЙ КАБИНЕТ
+# ---------------------------------------------------------
+else:
+    current_user = st.session_state['logged_in_user']
     role = current_user['role']
+    
+    # Сайдбар управления аккаунтом
+    st.sidebar.title("📱 Ваш аккаунт")
+    st.sidebar.write(f"Вы вошли как: **{current_user['name']}**")
+    st.sidebar.write(f"Номер: `{current_user['phone']}`")
+    st.sidebar.write(f"Роль: `{role}`")
+    
+    if st.sidebar.button("🚪 Выйти из системы", use_container_width=True):
+        st.session_state['logged_in_user'] = None
+        st.rerun()
+        
+    # Функция генерации QR-кода
+    def render_qr(data_text):
+        qr = qrcode.QRCode(version=1, box_size=10, border=2)
+        qr.add_data(data_text)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = BytesIO()
+        img.save(buf)
+        st.sidebar.image(buf.getvalue(), caption="Персональный QR-код для ресепшена", width=150)
+        
     render_qr(f"User: {current_user['name']} | Role: {role} | Phone: {current_user['phone']}")
 
-    # 1. ПАНЕЛЬ АДМИНИСТРАТОРА
+    # 1. ПАНЕЛЬ АДМИНИСТРАТОРА (Махлиё)
     if role == 'Admin':
         st.title("💼 Панель администратора: Махлиё")
         t1, t2, t3, t4, t5 = st.tabs(["📊 Обзор", "👥 Пациенты", "🏨 Палаты", "📅 Назначение процедур", "💬 Отзывы"])
@@ -154,16 +186,16 @@ if current_user is not None:
             st.dataframe(all_patients, use_container_width=True)
 
         with t2:
-            st.subheader("Регистрация нового пациента")
+            st.subheader("Регистрация нового пациента администратором")
             with st.form("admin_reg_form"):
                 p_name = st.text_input("Имя Фамилия пациента")
                 p_phone = st.text_input("Номер телефона")
                 p_package = st.selectbox("Пакет услуг", ["Стандарт", "Полу-Люкс", "Люкс"])
                 p_complaints = st.text_area("Жалобы")
-                if st.form_submit_button("Зарегистрировать"):
+                if st.form_submit_button("Зарегистрировать пациента"):
                     if p_name and p_phone:
                         run_query("INSERT INTO users (name, phone, role, package, complaints) VALUES (?, ?, 'Пациент', ?, ?)", (p_name, p_phone, p_package, p_complaints), is_select=False)
-                        st.success("Пациент добавлен!")
+                        st.success("Пациент успешно добавлен в систему!")
                         st.rerun()
 
         with t3:
@@ -181,10 +213,10 @@ if current_user is not None:
                 chosen_doctor = st.selectbox("Врач", doctors_list['name'].tolist() if not doctors_list.empty else ["Нет врачей"])
                 proc_name = st.selectbox("Процедура", ["Общий осмотр", "Массаж", "Физиотерапия", "Грязевые ванны"])
                 date_time_str = st.text_input("Дата и время", value="Сегодня, 12:00")
-                if st.form_submit_button("Назначить"):
+                if st.form_submit_button("Назначить процедуру"):
                     p_phone_extracted = chosen_patient.split("(")[-1].replace(")", "") if "(" in chosen_patient else ""
                     run_query("INSERT INTO appointments (patient_phone, doctor_name, procedure_name, date_time) VALUES (?, ?, ?, ?)", (p_phone_extracted, chosen_doctor, proc_name, date_time_str), is_select=False)
-                    st.success("Процедура добавлена!")
+                    st.success("Процедура успешно назначена!")
 
         with t5:
             st.subheader("Отзывы")
@@ -198,25 +230,26 @@ if current_user is not None:
         
         with p_tab1:
             available_rooms = run_query("SELECT * FROM rooms WHERE status='Свободно'")
-            display_rooms = available_rooms.copy()
-            display_rooms['Палата'] = display_rooms['room_number'] + " (" + display_rooms['price'] + ")"
+            st.write("### Доступные для бронирования палаты")
             st.dataframe(available_rooms[['room_number', 'price', 'corpus', 'status']], use_container_width=True)
             with st.form("book_room"):
                 selected_room_idx = st.selectbox("Выберите номер палаты", [f"{row['room_number']} ({row['price']})" for _, row in available_rooms.iterrows()] if not available_rooms.empty else [])
-                if st.form_submit_button("Забронировать"):
+                if st.form_submit_button("Подтвердить бронирование"):
                     r_num = selected_room_idx.split(" (")[0]
                     r_type = selected_room_idx.split(" (")[1].replace(")", "")
                     run_query("UPDATE users SET room = ? WHERE phone = ?", (f"{r_num} ({r_type})", current_user['phone']), is_select=False)
                     run_query("UPDATE rooms SET status = 'Занято' WHERE room_number = ? AND price = ?", (r_num, r_type), is_select=False)
-                    st.success("Забронировано!")
+                    st.success(f"Палата {r_num} ({r_type}) успешно забронирована за вами!")
                     st.rerun()
 
         with p_tab2:
-            my_appointments = run_query("SELECT doctor_name, procedure_name, date_time, status FROM appointments WHERE patient_phone = ?", (current_user['phone'],))
+            st.write("### Ваше расписание лечебных процедур")
+            my_appointments = run_query("SELECT doctor_name as 'Врач', procedure_name as 'Процедура', date_time as 'Дата/Время', status as 'Статус' FROM appointments WHERE patient_phone = ?", (current_user['phone'],))
             st.dataframe(my_appointments, use_container_width=True)
 
     # 3. КАБИНЕТ ВРАЧА
     elif role == 'Врач':
         st.title(f"🩺 Рабочее место Врача: {current_user['name']}")
-        doc_appointments = run_query("SELECT id, patient_phone, procedure_name, date_time, status FROM appointments WHERE doctor_name = ?", (current_user['name'],))
+        st.write("### Список назначенных к вам пациентов")
+        doc_appointments = run_query("SELECT id as 'ID Назначения', patient_phone as 'Телефон пациента', procedure_name as 'Процедура', date_time as 'Дата/Время', status as 'Статус' FROM appointments WHERE doctor_name = ?", (current_user['name'],))
         st.dataframe(doc_appointments, use_container_width=True)
