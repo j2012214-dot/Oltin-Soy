@@ -77,8 +77,8 @@ def init_db():
     rooms_count = run_query("SELECT COUNT(*) as count FROM rooms")['count'][0]
     if rooms_count == 0:
         run_query("INSERT OR IGNORE INTO users (name, phone, role) VALUES ('Махлиё (Администратор)', '+998970978668', 'Admin')", is_select=False)
-        run_query("INSERT OR IGNORE INTO users (name, phone, role) VALUES ('Доктор', '+79992223344', 'Врач')", is_select=False)
-        run_query("INSERT OR IGNORE INTO users (name, phone, role) VALUES ('Докторs', '+998901112233', 'Врач')", is_select=False)
+        run_query("INSERT OR IGNORE INTO users (name, phone, role) VALUES ('Доктор Петров (Терапевт)', '+79992223344', 'Врач')", is_select=False)
+        run_query("INSERT OR IGNORE INTO users (name, phone, role) VALUES ('Доктор Ахмедов (Физиотерапевт)', '+998901112233', 'Врач')", is_select=False)
         
         rooms_data = []
         
